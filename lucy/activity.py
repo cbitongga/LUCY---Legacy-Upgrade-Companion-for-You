@@ -32,10 +32,20 @@ def review_progress(job, timestamp=None):
             step_status = {"running": "working", "failed": "failed", "interrupted": "interrupted",
                            "cancelled": "cancelled", "paused": "paused", "stale": "stale"}.get(status, "waiting")
         steps.append({"id": key, "label": label, "agent_id": role, "status": step_status})
-    return {"title": "Requirements review", "kind": "review", "status": status, "steps": steps,
+    if job.get('delegate'):
+        children = []
+        for child in job['children']:
+            child_status = child['status']
+            if child_status == 'running':
+                child_status = 'working' if status == 'running' else status
+            if child_status == 'pending' and status in {'cancelled', 'failed', 'interrupted', 'stale', 'paused'}:
+                child_status = 'blocked' if status in {'failed', 'interrupted'} else status
+            children.append({'id': 'child-' + child['id'], 'label': child['name'], 'agent_id': 'child-' + child['id'], 'status': child_status})
+        steps = [steps[0], *children, *steps[2:]]
+    return {"title": "Delegated requirements review" if job.get('delegate') else "Requirements review", "kind": "review", "status": status, "steps": steps,
             "job_id": job["id"], "provider": job["provider"], "current_contract": job.get("current_contract", True),
             "contract_version": job["requirements"]["version"], "attempt": job.get("attempts", 0),
-            "detail": "Four execution steps for this review only. Completing them does not mean the application migration is complete."}
+            "detail": "Recorded execution steps for this review only. Completing them does not mean the application migration is complete."}
 
 
 def project_activity(project, jobs, timestamp=None):
@@ -67,6 +77,7 @@ def project_activity(project, jobs, timestamp=None):
     if not workflow["current_contract"]:
         workflow["next_step"] = "Start a review of the current contract; this report is outdated"
     agents = []
+    children = job.get("children", []) if not project["demo"] and jobs else []
     for definition in registry():
         agent_id = definition["id"]
         assignment = next((s for s in workflow["steps"] if s["agent_id"] == agent_id), None)
@@ -85,7 +96,17 @@ def project_activity(project, jobs, timestamp=None):
         else:
             mode = "Local handler" if agent_id in HANDLERS else "Registered definition"
         agents.append({"id": agent_id, "name": definition["name"], "status": status, "task": task, "mode": mode, "category": definition["activation"]})
-    counts = {key: sum(a["status"] == key for a in agents) for key in {"working", "waiting", "completed", "failed", "paused", "interrupted", "cancelled", "stale", "idle", "not_configured"}}
+    subagents = []
+    for child in children:
+        step = next(s for s in workflow['steps'] if s['id'] == 'child-' + child['id'])
+        status = 'waiting' if step['status'] == 'pending' else step['status']
+        if not workflow['current_contract'] and status == 'completed':
+            status = 'stale'
+        subagents.append({'id': step['id'], 'name': child['name'], 'role': child['role'],
+                          'parent_id': child['parent_id'], 'status': status, 'task': child['objective'],
+                          'mode': 'Claude API child' if workflow.get('provider') == 'anthropic' else 'Local checklist child',
+                          'reason': child['reason'], 'context': 'Full contract v' + str(workflow['contract_version'])})
+    counts = {key: sum(a["status"] == key for a in agents + subagents) for key in {"working", "waiting", "completed", "failed", "paused", "interrupted", "cancelled", "stale", "idle", "not_configured"}}
     return {"project_id": project["id"], "project_name": project["name"], "updated_at": now(), "workflow": workflow,
-            "agents": agents, "counts": counts, "migration_remaining_steps": None,
+            "agents": agents, "subagents": subagents, "subagent_count": len(subagents), "counts": counts, "migration_remaining_steps": None,
             "migration_note": "Full migration step count is not yet defined. This view shows the current bounded workflow."}

@@ -8,13 +8,14 @@ import uuid
 from .jobs import Jobs
 from .providers import ProviderError, run_review, validate_report
 from .store import Store
+from .delegation import merge
 
 TASK_TIMEOUT_SECONDS = 60
 
 
-def provider_child(connection, requirements, config):
+def provider_child(connection, requirements, config, assignment=None):
     try:
-        connection.send({"result": run_review(requirements, config)})
+        connection.send({"result": run_review(requirements, config, assignment)})
     except ProviderError as exc:
         connection.send({"error": str(exc)})
     except Exception:
@@ -23,11 +24,11 @@ def provider_child(connection, requirements, config):
         connection.close()
 
 
-def execute(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS):
+def execute_one(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS, assignment=None):
     # Spawn avoids sharing SQLite connections or server state with the provider.
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(target=provider_child, args=(sender, job["requirements"], job["config"]), daemon=True)
+    process = context.Process(target=provider_child, args=(sender, job["requirements"], job["config"], assignment), daemon=True)
     started = time.monotonic()
     heartbeat_at = started
     try:
@@ -49,6 +50,9 @@ def execute(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS):
                     outcome = receiver.recv()
                 except EOFError:
                     outcome = {"error": "Provider process exited without a report"}
+                if assignment is not None and "result" in outcome:
+                    validate_report(outcome["result"]["report"])
+                    return outcome["result"]
                 if "result" in outcome:
                     if not jobs.advance(job["id"], owner, "validating"):
                         return
@@ -72,6 +76,25 @@ def execute(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS):
                 process.kill()
                 process.join(timeout=2)
             process.close()
+
+
+def execute(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS):
+    if not job.get('delegate'):
+        return execute_one(jobs, job, owner, stop, timeout)
+    for child in job['children']:
+        if not jobs.child_update(job['id'], owner, child['id']):
+            return
+        assignment = {key: child[key] for key in ('id', 'name', 'keys', 'objective', 'reason')}
+        result = execute_one(jobs, job, owner, stop, timeout, assignment)
+        if result is None or not jobs.child_update(job['id'], owner, child['id'], result):
+            return
+    current = jobs.get(job['id'])
+    if not jobs.advance(job['id'], owner, 'validating'):
+        return
+    result = merge(current['children'], job['provider'], job['config']['model'])
+    validate_report(result['report'])
+    if jobs.advance(job['id'], owner, 'saving'):
+        jobs.finish(job['id'], owner, result=result)
 
 
 def worker(root, once=False):

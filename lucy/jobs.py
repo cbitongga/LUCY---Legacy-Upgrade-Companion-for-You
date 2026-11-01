@@ -8,6 +8,7 @@ import uuid
 from .engine import digest
 from .providers import configuration, MAX_INPUT_BYTES
 from .store import now
+from .delegation import plan
 
 ACTIVE = ("queued", "running", "paused")
 LEASE_SECONDS = 90
@@ -54,7 +55,9 @@ class Jobs:
         self.store.get(project_id)
         return [self.detail(row[0]) for row in self.db.execute("SELECT id FROM jobs WHERE project_id=? ORDER BY rowid DESC LIMIT 50", (project_id,)).fetchall()]
 
-    def enqueue(self, project_id, provider, contract_hash, request_key, consent=False):
+    def enqueue(self, project_id, provider, contract_hash, request_key, consent=False, delegate=False):
+        if type(delegate) is not bool:
+            raise ValueError("delegate must be a boolean")
         if not isinstance(request_key, str) or not 8 <= len(request_key) <= 100:
             raise ValueError("An idempotency key of 8–100 characters is required")
         if provider not in ("offline", "anthropic"):
@@ -70,7 +73,7 @@ class Jobs:
             existing = self.db.execute("SELECT body FROM jobs WHERE project_id=? AND request_key=?", (project_id, request_key)).fetchone()
             if existing:
                 job = json.loads(existing[0])
-                if job["provider"] != provider or job["contract_hash"] != contract_hash:
+                if job["provider"] != provider or job["contract_hash"] != contract_hash or job.get("delegate", False) != delegate:
                     raise ValueError("Idempotency key already used for different inputs")
                 return job
             if self.db.execute("SELECT 1 FROM jobs WHERE project_id=? AND status IN ('queued','running','paused')", (project_id,)).fetchone():
@@ -78,6 +81,7 @@ class Jobs:
             if len(json.dumps(project["requirements"]).encode()) > MAX_INPUT_BYTES - 2000:
                 raise ValueError("Requirements exceed the review input budget")
             job = {"id": uuid.uuid4().hex, "project_id": project_id, "kind": "requirements_review", "role": "interviewer",
+                   "delegate": delegate, "children": plan(project["requirements"]) if delegate else [],
                    "status": "queued", "stage": "queued", "provider": provider, "config": configuration(provider), "requirements": project["requirements"],
                    "contract_hash": contract_hash, "attempts": 0, "created_at": now(), "updated_at": now(), "result": None,
                    "error": None, "owner": None, "lease_until": None, "consent": consent is True,
@@ -120,6 +124,24 @@ class Jobs:
                 return False
             job["lease_until"] = time.time() + LEASE_SECONDS
             self.write(job)
+            return True
+
+    def child_update(self, job_id, owner, child_id, result=None):
+        with self.transaction():
+            job = self.get(job_id)
+            if job['status'] != 'running' or job['owner'] != owner or job['lease_until'] < time.time():
+                return False
+            child = next(c for c in job['children'] if c['id'] == child_id)
+            if result is None:
+                if child['status'] != 'pending' or any(c['status'] == 'running' for c in job['children']):
+                    raise ValueError('Child cannot be started')
+                child['status'] = 'running'
+            else:
+                if child['status'] != 'running':
+                    raise ValueError('Child is not running')
+                child.update(status='completed', result=result)
+            self.write(job)
+            self.event(job, 'child:' + child_id + ':' + child['status'])
             return True
 
     def advance(self, job_id, owner, stage):
@@ -179,6 +201,8 @@ class Jobs:
             job.update(status=transitions[action][1], owner=None, lease_until=None)
             if action == "retry":
                 job["stage"] = "queued"
+                for child in job.get("children", []):
+                    child.update(status="pending", result=None)
             self.write(job)
             self.event(job, action)
             return job

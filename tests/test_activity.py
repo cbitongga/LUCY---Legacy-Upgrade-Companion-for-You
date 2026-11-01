@@ -1,5 +1,9 @@
 import tempfile
 import time
+import subprocess
+import sys
+from pathlib import Path
+from lucy.delegation import plan
 import unittest
 
 from lucy.activity import project_activity
@@ -74,3 +78,50 @@ class ActivityTests(unittest.TestCase):
         self.assertFalse(self.jobs.advance(job['id'], 'worker', 'validating'))
         self.assertEqual(self.activity()['counts']['working'], 0)
         self.assertEqual(self.activity()['counts']['cancelled'], 1)
+
+    def test_decomposition_covers_contract_once_and_adapts(self):
+        from lucy.agents import QUESTIONNAIRE
+        base = plan(self.project['requirements'])
+        self.assertEqual(len(base), 3)
+        supplied = {'version': 2, 'answers': {'security': 'SSO', 'deployment': 'On premise'}}
+        detailed = plan(supplied)
+        self.assertEqual(len(detailed), 5)
+        keys = [key for child in detailed for key in child['keys']]
+        self.assertCountEqual(keys, [q[0] for q in QUESTIONNAIRE])
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_delegated_worker_persists_children_and_totals(self):
+        job = self.jobs.enqueue(self.project['id'], 'offline', digest(self.project['requirements']), 'delegated-job', delegate=True)
+        self.assertEqual(self.activity()['subagent_count'], 3)
+        self.assertEqual(self.activity()['workflow']['remaining'], 6)
+        result = subprocess.run([sys.executable, '-m', 'lucy', '--data', self.temp.name, 'worker', '--once'],
+                                cwd=Path(__file__).resolve().parent.parent, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        job = self.jobs.detail(job['id'])
+        self.assertEqual(job['status'], 'completed')
+        self.assertTrue(all(c['status'] == 'completed' and c['result'] for c in job['children']))
+        self.assertEqual(len(job['result']['report']['questions']), 12)
+        self.assertEqual(self.activity()['workflow']['remaining'], 0)
+        self.assertEqual(self.activity()['counts']['working'], 0)
+        self.assertEqual(len(job['events']), 11)
+
+    def test_child_cancel_lease_and_retry_projection(self):
+        job = self.jobs.enqueue(self.project['id'], 'offline', digest(self.project['requirements']), 'delegated-job', delegate=True)
+        self.jobs.claim('one')
+        self.assertFalse(self.jobs.child_update(job['id'], 'other', 'scope'))
+        self.assertTrue(self.jobs.child_update(job['id'], 'one', 'scope'))
+        self.assertEqual(self.activity()['counts']['working'], 1)
+        self.assertEqual(self.activity()['subagents'][0]['status'], 'working')
+        with self.assertRaises(ValueError):
+            self.jobs.child_update(job['id'], 'one', 'behavior')
+        self.assertEqual(self.activity(timestamp=time.time()+1000)['subagents'][0]['status'], 'interrupted')
+        self.jobs.finish(job['id'], 'one', error='test failure')
+        self.assertEqual(self.activity()['subagents'][0]['status'], 'failed')
+        self.jobs.control(job['id'], 'retry')
+        self.assertEqual(self.activity()['workflow']['remaining'], 6)
+        self.jobs.claim('one')
+        self.jobs.child_update(job['id'], 'one', 'scope')
+        self.jobs.control(job['id'], 'cancel')
+        self.assertFalse(self.jobs.child_update(job['id'], 'one', 'scope', {'report': {}}))
+        self.assertEqual(self.activity()['counts']['working'], 0)
+        self.assertTrue(all(c['status'] == 'cancelled' for c in self.activity()['subagents']))

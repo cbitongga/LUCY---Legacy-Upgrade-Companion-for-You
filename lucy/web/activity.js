@@ -21,7 +21,7 @@ const AGENT_GLYPHS = {
   observability: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/>',
   interviewer: '<path d="M2 3h14v11H8l-5 4v-4H2V3Zm16 5h4v13l-4-3h-6v-2M6 7h6M6 10h4"/>'
 };
-const ACTIVITY_LABELS = {working:'Working now',waiting:'Waiting',completed:'Completed',failed:'Needs attention',paused:'Paused',interrupted:'Worker interrupted',cancelled:'Cancelled',stale:'Outdated',idle:'Idle',not_configured:'Not configured',pending:'Up next'};
+const ACTIVITY_LABELS = {working:'Working now',waiting:'Waiting',completed:'Completed',failed:'Needs attention',paused:'Paused',interrupted:'Worker interrupted',cancelled:'Cancelled',stale:'Outdated',idle:'Idle',not_configured:'Not configured',pending:'Up next',blocked:'Blocked'};
 
 function agentIcon(id) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AGENT_GLYPHS[id] || AGENT_GLYPHS.orchestrator}</svg>`;
@@ -31,54 +31,50 @@ function agentStateLabel(status) {
   return ACTIVITY_LABELS[status] || 'Unknown';
 }
 
-function agentTile(agent) {
-  return `<article class="agent-tile agent-${esc(agent.status)}">
-    <div class="agent-tile-top"><span class="agent-avatar">${agentIcon(agent.id)}</span><span class="agent-state"><i></i>${esc(agentStateLabel(agent.status))}</span></div>
-    <h3>${esc(agent.name)}</h3><p class="agent-assignment">${esc(agent.task)}</p><span class="agent-mode">${esc(agent.mode)}</span>
-  </article>`;
-}
 
+function robotIcon(id) {
+  return `<span class="robot-shell"><svg class="robot-body" viewBox="0 0 80 84" aria-hidden="true"><path d="M40 6v9"/><circle cx="40" cy="5" r="3"/><rect x="13" y="17" width="54" height="42" rx="16"/><rect class="robot-visor" x="21" y="27" width="38" height="20" rx="8"/><path class="robot-eyes" d="M30 34v6m20-6v6"/><path d="M5 32v15m70-15v15M28 60v8m24-8v8"/><rect x="22" y="65" width="36" height="12" rx="6"/></svg><span class="robot-specialty">${agentIcon(id)}</span></span>`;
+}
+function mapNode(agent,child=false) {
+  return `<button class="map-node agent-${esc(agent.status)} ${child?'child-node':''} ${state.selectedAgent===agent.id?'node-selected':''}" data-action="inspect-agent" data-agent="${esc(agent.id)}" aria-label="${esc(agent.name)}: ${esc(agentStateLabel(agent.status))}. View assignment" title="${esc(agent.task)}">
+    ${robotIcon(agent.role||agent.id)}<strong>${esc(agent.name)}</strong><span class="agent-state"><i></i>${esc(agentStateLabel(agent.status))}</span>${child?'<small>SUBAGENT</small>':''}</button>`;
+}
 function activityPanel(compact=false) {
   const activity=state.activity;
-  if(!activity) return '<div class="card empty"><h2>Your engineering team is ready to meet you</h2><p>Create or open a project to see assignments and progress.</p></div>';
-  const workflow=activity.workflow;
-  const working=activity.agents.filter(a=>a.status==='working');
-  const needsAttention=activity.counts.failed+activity.counts.interrupted;
-  const ranks={working:0,failed:1,interrupted:1,paused:2,waiting:3,completed:4,stale:5,cancelled:6,idle:7,not_configured:8};
-  const agents=[...activity.agents].sort((a,b)=>(ranks[a.status]??9)-(ranks[b.status]??9));
-  const roster=compact?agents.slice(0,6):agents;
-  const current=working.length?working.map(a=>a.name).join(', '):needsAttention?'A review needs attention':workflow.status==='queued'?'Queued for a worker':workflow.status==='paused'?'Work is paused':workflow.remaining===0&&workflow.current_contract?'Current workflow complete':'No agents executing right now';
-  return `<section class="activity-board" aria-label="Agent activity and workflow progress">
-    <div class="activity-heading"><div><span class="eyeline">TEAM ACTIVITY</span><h2>${esc(activity.project_name)}</h2></div><span class="live-indicator"><i></i>Updates every 2s</span></div>
+  if(!activity) return '<div class="card empty"><h2>Your crew is ready</h2><p>Create or open a project to give LUCY a mission.</p></div>';
+  const workflow=activity.workflow, children=activity.subagents||[], all=[...activity.agents,...children];
+  const working=all.filter(a=>a.status==='working');
+  const groups=[['Understand & plan',['interviewer','intelligence','architect','forecast','knowledge']],['Build & challenge',['implementation','test','differential','critic','adversarial','remediation']],['Protect & verify',['guardian','assurance','memory','cloud','stability','observability']]];
+  const selected=all.find(a=>a.id===state.selectedAgent);
+  return `<section class="agent-universe" aria-label="Live agent map">
+    <div class="map-heading"><div><span class="eyeline">MISSION MAP</span><h2>${esc(activity.project_name)}</h2></div><span class="live-indicator"><i></i>Live · every 2s</span></div>
     <p class="activity-connection" role="status"></p>
-    <div class="activity-overview">
-      <div class="work-now"><span class="label">Working now</span><strong>${activity.counts.working}</strong><p>${esc(current)}</p></div>
-      <div class="workflow-summary"><div class="row"><h3>${esc(workflow.title)}</h3><span class="step-count">${workflow.completed} / ${workflow.total} complete</span></div>
-        <progress value="${workflow.completed}" max="${workflow.total}" aria-label="Completed steps in ${esc(workflow.title)}"></progress>
-        <div class="row"><strong>${workflow.remaining} ${workflow.remaining===1?'step':'steps'} remaining</strong><span class="hint">${activity.counts.waiting} agents waiting</span></div>
-        <p class="hint">${esc(workflow.next_step)}</p>
-      </div>
+    <div class="mission-ribbon"><span><b>${activity.counts.working}</b> working</span><span><b>${children.length}</b> subagents</span><span><b>${workflow.remaining}</b> steps remaining</span><span class="mission-completion">${workflow.completed}/${workflow.total} complete</span></div>
+    <progress class="map-progress" value="${workflow.completed}" max="${workflow.total}" aria-label="${esc(workflow.title)} completed steps"></progress>
+    <div class="map-caption"><span>${esc(workflow.title)}</span><span>${working.length?esc(working.map(a=>a.name).join(', '))+' working':!workflow.current_contract?'Outdated contract':workflow.remaining===0?'Workflow complete':({queued:'Queued for a worker',paused:'Paused',failed:'Review needs attention',interrupted:'Worker interrupted',cancelled:'Cancelled'}[workflow.status]||'Awaiting the next action')}</span></div>
+    ${!workflow.current_contract?'<div class="callout">Historical review · the requirements changed. Start a new review for the current contract.</div>':''}
+    <div class="robot-map">
+      <div class="command-node">${mapNode(activity.agents.find(a=>a.id==='orchestrator'))}<div class="shared-context"><span class="context-orbit"></span><b>Shared mission context</b><span>One pinned requirements contract</span><small>${children.length?children.length+' bounded child assignments · one level deep':'Delegation available for requirements review'}</small></div></div>
+      ${children.length?`<div class="child-branch"><span class="branch-label">DELEGATED BY ORCHESTRATOR</span><div class="child-nodes">${children.map(a=>mapNode(a,true)).join('')}</div></div>`:''}
+      <div class="specialist-branches">${groups.map(([label,ids])=>`<section class="map-branch"><h3>${label}</h3><div class="branch-nodes">${ids.map(id=>mapNode(activity.agents.find(a=>a.id===id))).join('')}</div></section>`).join('')}</div>
     </div>
-    ${!workflow.current_contract?'<div class="callout">This review belongs to an older requirements contract. Its completion is historical, not progress on the current contract.</div>':''}
-    <ol class="workflow-steps">${workflow.steps.map((step,index)=>`<li class="workflow-step step-${esc(step.status)}"><span class="step-number">${step.status==='completed'?'✓':index+1}</span><div><strong>${esc(step.label)}</strong><span>${esc(agentStateLabel(step.status))} · ${esc(step.agent_id?activity.agents.find(a=>a.id===step.agent_id)?.name:'You')}</span></div></li>`).join('')}</ol>
-    <p class="activity-scope">${esc(workflow.detail)} <span>Full migration: remaining steps not yet defined.</span></p>
-    <div class="roster-heading"><h3>${compact?'Assigned & available specialists':'All 18 specialists'}</h3><span class="hint">Animated icons indicate actual work · local handlers are labeled</span></div>
-    <div class="agent-roster">${roster.map(agentTile).join('')}</div>
-    ${compact?`<div class="activity-footer">${button('View all agents & progress →','view','data-view="Agent operations"')}<span class="hint">${activity.counts.not_configured} specialists await an executor</span></div>`:''}
+    <p class="map-legend"><span class="legend-working">● Working</span><span>○ Waiting / idle</span><span>✓ Completed</span><span>Dim robots: executor not configured</span><span>Select a robot to inspect its assignment</span></p>
+    ${selected?`<div class="assignment-detail"><div>${robotIcon(selected.role||selected.id)}</div><div><span class="eyeline">${selected.parent_id?'CHILD OF MIGRATION ORCHESTRATOR':'SPECIALIST ASSIGNMENT'}</span><h3>${esc(selected.name)}</h3><p>${esc(selected.task)}</p><span class="hint">${esc(selected.mode)} · ${esc(agentStateLabel(selected.status))}${selected.context?' · '+esc(selected.context):''}</span>${selected.reason?`<p class="hint">${esc(selected.reason)}</p>`:''}</div></div>`:''}
+    <details class="map-checkpoints"><summary>Flight plan · ${workflow.remaining} steps remaining</summary><ol class="workflow-steps">${workflow.steps.map((step,index)=>`<li class="workflow-step step-${esc(step.status)}"><span class="step-number">${step.status==='completed'?'✓':index+1}</span><div><strong>${esc(step.label)}</strong><span>${esc(agentStateLabel(step.status))}</span></div></li>`).join('')}</ol><p class="hint">Next: ${esc(workflow.next_step)}</p></details>
+    <p class="activity-scope">${esc(workflow.detail)} Full migration steps are not yet defined. Robots represent role handlers; child counts represent actual assignments.</p>
+    ${compact?`<div class="activity-footer">${button('Open mission workspace →','view','data-view="Agent operations"')}</div>`:''}
   </section>`;
 }
-
 function paintActivity() {
   const container=document.querySelector('#agent-activity');
-  if(container) container.innerHTML=activityPanel(state.view==='Mission control');
+  if(container){const focused=container.contains(document.activeElement)?document.activeElement.dataset.agent:null;const expanded=container.querySelector('.map-checkpoints')?.open;container.innerHTML=activityPanel(state.view==='Mission control');if(expanded)container.querySelector('.map-checkpoints').open=true;if(focused){const node=[...container.querySelectorAll('[data-agent]')].find(el=>el.dataset.agent===focused);node?.focus({preventScroll:true});}}
 }
-
 function markActivityDisconnected() {
   const container=document.querySelector('#agent-activity');
-  if(!container) return;
+  if(!container)return;
   container.classList.add('activity-disconnected');
   const message=container.querySelector('.activity-connection');
-  if(message) message.textContent='Live updates unavailable. Showing the last recorded state; activity may have changed.';
+  if(message)message.textContent='Connection interrupted. Showing the last recorded activity.';
   const live=container.querySelector('.live-indicator');
-  if(live) live.textContent='Updates disconnected';
+  if(live)live.textContent='Updates disconnected';
 }

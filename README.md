@@ -55,3 +55,5 @@ This explicitly approves a bounded fixture: baseline, seeded faulty refactor, co
 This is a single-user localhost prototype. Do not bind it to a public interface or route untrusted source code to the fixture executor. Process separation is not a security sandbox. See the architecture for the production isolation boundary.
 
 Agent progress is visible in **Mission control** and **Agent operations**: 18 specialist icons, actual working states, current workflow checkpoints, and completed/remaining step counts. The count is scoped to planning or review until a full migration plan exists. See [activity details](docs/standalone.md#agent-activity-and-remaining-steps).
+
+**Launch offline crew** now decomposes requirements into 3–5 bounded child reviews sharing the full contract. The robot mission map shows actual subagent counts, assignments and progress. Optional Claude children require explicit consent for up to five API calls per attempt. This is read-only requirements delegation; autonomous repository migration remains unimplemented.

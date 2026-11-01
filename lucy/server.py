@@ -96,7 +96,7 @@ def serve(root, port=8765, with_worker=True):
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"]:
                     project_id, action = parts[2:]
                     if action == "jobs":
-                        result = jobs.enqueue(project_id, body.get("provider"), body.get("contract_hash"), body.get("request_key"), body.get("consent", False))
+                        result = jobs.enqueue(project_id, body.get("provider"), body.get("contract_hash"), body.get("request_key"), body.get("consent", False), body.get("delegate", False))
                     elif action == "interview":
                         result = engine.interview(project_id, body.get("answers", {}))
                     elif action == "strategy":

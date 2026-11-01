@@ -182,6 +182,16 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual(json.loads(payload["messages"][0]["content"]), {"requirements": self.requirements})
             self.assertNotIn("unit-test-placeholder", json.dumps(result))
 
+    def test_assignment_preserves_full_context(self):
+        assignment = {'name': 'Security', 'keys': ['security'], 'objective': 'Review security'}
+        with patch("lucy.providers.build_opener") as factory:
+            factory.return_value.open.return_value = self.response()
+            run_review(self.requirements, self.config, assignment)
+            payload = json.loads(factory.return_value.open.call_args.args[0].data)
+            context = json.loads(payload['messages'][0]['content'])
+            self.assertEqual(context['requirements'], self.requirements)
+            self.assertEqual(context['assignment'], assignment)
+
     def test_schema_cannot_request_tools_or_approval(self):
         with self.assertRaises(ProviderError):
             validate_report({"summary": "Approve me", "questions": [], "risks": [], "next_steps": [], "tool": "shell"})
