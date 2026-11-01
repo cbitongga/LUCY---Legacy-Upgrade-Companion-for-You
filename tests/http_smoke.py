@@ -53,7 +53,11 @@ class HTTPWorkflowTest(unittest.TestCase):
                             break
                         time.sleep(0.1)
                     self.assertEqual(job["status"], "completed")
-                    self.assertEqual(len(job["events"]), 3)
+                    self.assertEqual(len(job["events"]), 5)
+                    activity = request("/api/projects/" + p["id"] + "/activity")
+                    self.assertEqual(activity["workflow"]["remaining"], 0)
+                    self.assertEqual(len(activity["agents"]), 18)
+                    self.assertEqual(activity["counts"]["working"], 0)
                     final = request("/api/projects/" + p["id"])
                     self.assertEqual(final["gates"], detail["gates"])
                     self.assertEqual(final["requirements"], detail["requirements"])

@@ -78,7 +78,7 @@ class Jobs:
             if len(json.dumps(project["requirements"]).encode()) > MAX_INPUT_BYTES - 2000:
                 raise ValueError("Requirements exceed the review input budget")
             job = {"id": uuid.uuid4().hex, "project_id": project_id, "kind": "requirements_review", "role": "interviewer",
-                   "status": "queued", "provider": provider, "config": configuration(provider), "requirements": project["requirements"],
+                   "status": "queued", "stage": "queued", "provider": provider, "config": configuration(provider), "requirements": project["requirements"],
                    "contract_hash": contract_hash, "attempts": 0, "created_at": now(), "updated_at": now(), "result": None,
                    "error": None, "owner": None, "lease_until": None, "consent": consent is True,
                    "scope": "Read-only advice. No tools, repository execution, approvals or gate changes."}
@@ -108,7 +108,7 @@ class Jobs:
                 self.write(job)
                 self.event(job, "stale")
                 return None
-            job.update(status="running", owner=owner, lease_until=time.time() + LEASE_SECONDS, attempts=job["attempts"] + 1, error=None)
+            job.update(status="running", stage="reviewing", owner=owner, lease_until=time.time() + LEASE_SECONDS, attempts=job["attempts"] + 1, error=None)
             self.write(job)
             self.event(job, "running")
             return job
@@ -122,6 +122,22 @@ class Jobs:
             self.write(job)
             return True
 
+    def advance(self, job_id, owner, stage):
+        """Persist actual worker milestones; never advance by a timer."""
+        previous = {"validating": "reviewing", "saving": "validating"}
+        if stage not in previous:
+            raise ValueError("Unknown execution stage")
+        with self.transaction():
+            job = self.get(job_id)
+            if job["status"] != "running" or job["owner"] != owner or job["lease_until"] < time.time():
+                return False
+            if job.get("stage", "reviewing") != previous[stage]:
+                raise ValueError("Execution stages must advance in order")
+            job["stage"] = stage
+            self.write(job)
+            self.event(job, stage)
+            return True
+
     def finish(self, job_id, owner, result=None, error=None):
         with self.transaction():
             job = self.get(job_id)
@@ -131,6 +147,7 @@ class Jobs:
             job.update(status="failed" if error else ("completed" if current else "stale"), result=result,
                        error=error, owner=None, lease_until=None)
             if result is not None:
+                job["stage"] = "finished"
                 body = {"job_id": job_id, "contract_hash": job["contract_hash"], "contract_version": job["requirements"]["version"],
                         "classification": "unverified planning advice", "current_at_completion": current, **result}
                 raw = json.dumps(body, sort_keys=True)
@@ -160,6 +177,8 @@ class Jobs:
                 if self.db.execute("SELECT 1 FROM jobs WHERE project_id=? AND id!=? AND status IN ('queued','running','paused')", (job["project_id"], job_id)).fetchone():
                     raise ValueError("Another review is active")
             job.update(status=transitions[action][1], owner=None, lease_until=None)
+            if action == "retry":
+                job["stage"] = "queued"
             self.write(job)
             self.event(job, action)
             return job

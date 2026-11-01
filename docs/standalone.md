@@ -82,3 +82,11 @@ Verification in this implementation: 27 unit/worker tests passed, the separate l
 ## Next milestone
 
 Expand supported agents through an enforced capability broker, approved repository intake, isolated workspaces and protected verifier artifacts. Add enterprise authentication, endpoint adapters, calibrated spending budgets, worker supervision and event streaming as needed. Do not describe this slice as autonomous coding or completed migration execution.
+
+## Agent activity and remaining steps
+
+Mission control includes a compact activity board; Agent operations shows all 18 specialists with distinct local SVG icons. Open a project's **Progress** button to select its board. The page polls `GET /api/projects/{id}/activity` every two seconds. Active steps animate, with reduced-motion support; paused, failed, interrupted, outdated, idle, and unconfigured states have explicit labels. A failed refresh warns that the displayed state is old and stops animation.
+
+Requirements reviews persist four checkpoints: check/claim contract, review requirements, validate report format, save report/evidence. The queue records `running`, `validating`, `saving`, then the terminal event. Step transitions require the live worker's ownership and lease. A failed or cancelled step remains unfinished; retry starts a new attempt at zero. Expired leases never display as working. Offline reviews may finish between polls; their durable events remain available in review history.
+
+The count applies only to the displayed review, three planning milestones, or eight synthetic fixture steps. A full application migration has no defined remaining-step count yet. Local role handlers are labeled separately from model calls; registering a specialist does not create an autonomous executor.

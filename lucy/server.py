@@ -14,6 +14,7 @@ from .engine import Engine
 from .store import Store
 from .jobs import Jobs
 from .providers import provider_status
+from .activity import project_activity
 
 WEB = Path(__file__).parent / "web"
 
@@ -47,9 +48,9 @@ def serve(root, port=8765, with_worker=True):
             if not self.trusted():
                 return self.send(403, {"error": "Untrusted host"})
             path = urlsplit(self.path).path
-            if path in {"/", "/app.js", "/style.css", "/lucy-logo.png", "/lucy-programmer.png"}:
+            if path in {"/", "/app.js", "/activity.js", "/style.css", "/lucy-logo.png", "/lucy-programmer.png"}:
                 name = "index.html" if path == "/" else path[1:]
-                mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8", "lucy-logo.png": "image/png", "lucy-programmer.png": "image/png"}[name]
+                mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "activity.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8", "lucy-logo.png": "image/png", "lucy-programmer.png": "image/png"}[name]
                 return self.send(200, (WEB / name).read_bytes(), mime)
             if path == "/api/session":
                 return self.send(200, {"token": token, "agents": registry(), "providers": provider_status(), "questions": [{"id": k, "question": q, "hint": h} for k, q, h in QUESTIONNAIRE]})
@@ -64,6 +65,9 @@ def serve(root, port=8765, with_worker=True):
                     return self.send(404, {"error": "Job not found"})
             if path.startswith("/api/projects/"):
                 try:
+                    if path.endswith("/activity"):
+                        project_id = path.split("/")[3]
+                        return self.send(200, project_activity(engine.store.get(project_id), jobs.list(project_id)))
                     if path.endswith("/jobs"):
                         return self.send(200, jobs.list(path.split("/")[3]))
                     return self.send(200, engine.detail(path.split("/")[3]))

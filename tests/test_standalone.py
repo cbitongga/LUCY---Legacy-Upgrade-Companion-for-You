@@ -132,7 +132,7 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         detail = self.jobs.detail(job["id"])
         self.assertEqual(detail["status"], "completed")
-        self.assertEqual([e["action"] for e in detail["events"]], ["queued", "running", "completed"])
+        self.assertEqual([e["action"] for e in detail["events"]], ["queued", "running", "validating", "saving", "completed"])
         self.assertEqual(len(detail["result"]["report"]["questions"]), 12)
         p = self.store.get(self.project["id"])
         self.assertEqual(p["requirements"], self.project["requirements"])

@@ -6,7 +6,7 @@ import time
 import uuid
 
 from .jobs import Jobs
-from .providers import ProviderError, run_review
+from .providers import ProviderError, run_review, validate_report
 from .store import Store
 
 TASK_TIMEOUT_SECONDS = 60
@@ -49,6 +49,12 @@ def execute(jobs, job, owner, stop, timeout=TASK_TIMEOUT_SECONDS):
                     outcome = receiver.recv()
                 except EOFError:
                     outcome = {"error": "Provider process exited without a report"}
+                if "result" in outcome:
+                    if not jobs.advance(job["id"], owner, "validating"):
+                        return
+                    validate_report(outcome["result"]["report"])
+                    if not jobs.advance(job["id"], owner, "saving"):
+                        return
                 jobs.finish(job["id"], owner, **outcome)
                 return
             if not process.is_alive():
