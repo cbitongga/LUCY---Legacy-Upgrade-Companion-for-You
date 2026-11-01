@@ -9,3 +9,6 @@
 .welcome-mascot{width:144px;height:144px;object-fit:contain;flex-shrink:0;margin-left:12px}
 @media(max-width:1000px){.brand{font-size:48px;gap:3px;height:60px}.brand-u{flex-basis:45px;width:45px;height:36px;border-width:6px;border-top:0;margin-bottom:6px}.brand-cat{width:40px;height:40px}.welcome-mascot{width:112px;height:112px}}
 @media(max-width:700px){.brand{font-size:44px;height:55px}.brand-u{flex-basis:42px;width:42px;height:33px;border-width:5px;border-top:0;margin-bottom:5px}.brand-cat{width:38px;height:38px}.welcome-mascot{width:108px;height:108px;margin:0;align-self:flex-end}}
+
+.brand-expansion{margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.65;letter-spacing:.3px}
+@media(max-width:700px){.brand-expansion{margin-top:8px;font-size:11px}.brand-expansion br{display:none}.brand-expansion br::after{content:" "}}
