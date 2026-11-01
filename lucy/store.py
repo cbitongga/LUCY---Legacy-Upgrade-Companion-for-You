@@ -13,12 +13,21 @@ class Store:
     def __init__(self, root):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.root / "lucy.sqlite3")
+        self.db = sqlite3.connect(self.root / "lucy.sqlite3", timeout=10)
         self.db.execute("PRAGMA foreign_keys=ON")
+        self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), at TEXT NOT NULL, body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), sha256 TEXT NOT NULL, body TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS jobs(
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            status TEXT NOT NULL, body TEXT NOT NULL, owner TEXT, lease_until REAL,
+            request_key TEXT NOT NULL, UNIQUE(project_id, request_key));
+        CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
+        CREATE TABLE IF NOT EXISTS job_events(
+            seq INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id),
+            at TEXT NOT NULL, action TEXT NOT NULL);
         """)
 
     def save(self, project, event, artifacts=None):

@@ -13,6 +13,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     web = sub.add_parser("serve")
     web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--no-worker", action="store_true", help="Run the UI/API only; start a separate worker using the same data directory")
+    work = sub.add_parser("worker", help="Standalone background requirements-review worker; no editor or CLI agent needed")
+    work.add_argument("--once", action="store_true", help="Process at most one queued job and exit")
     inspect = sub.add_parser("inspect", help="Read-only metadata discovery; does not execute repository code")
     inspect.add_argument("path")
     demo = sub.add_parser("demo", help="Optional synthetic fixture, not a real application migration")
@@ -21,7 +24,10 @@ def main():
     report.add_argument("project_id")
     args = parser.parse_args()
     if args.command == "serve":
-        serve(args.data, args.port)
+        serve(args.data, args.port, with_worker=not args.no_worker)
+    elif args.command == "worker":
+        from .runtime import worker
+        worker(args.data, once=args.once)
     elif args.command == "inspect":
         print(json.dumps(inspect_repository(args.path), indent=2))
     elif args.command == "demo":

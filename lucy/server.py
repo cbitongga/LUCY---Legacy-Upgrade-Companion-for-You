@@ -3,18 +3,26 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import secrets
+import subprocess
+import sys
+import signal
+import threading
 from urllib.parse import urlsplit
 
 from .agents import QUESTIONNAIRE, registry
 from .engine import Engine
 from .store import Store
+from .jobs import Jobs
+from .providers import provider_status
 
 WEB = Path(__file__).parent / "web"
 
 
-def serve(root, port=8765):
+def serve(root, port=8765, with_worker=True):
     engine = Engine(Store(root))
+    jobs = Jobs(engine.store)
     token = secrets.token_urlsafe(32)
+    child = None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -44,11 +52,20 @@ def serve(root, port=8765):
                 mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8", "lucy-logo.png": "image/png", "lucy-programmer.png": "image/png"}[name]
                 return self.send(200, (WEB / name).read_bytes(), mime)
             if path == "/api/session":
-                return self.send(200, {"token": token, "agents": registry(), "questions": [{"id": k, "question": q, "hint": h} for k, q, h in QUESTIONNAIRE]})
+                return self.send(200, {"token": token, "agents": registry(), "providers": provider_status(), "questions": [{"id": k, "question": q, "hint": h} for k, q, h in QUESTIONNAIRE]})
+            if path == "/api/runtime":
+                return self.send(200, {"worker": ("running" if child.poll() is None else "stopped") if child else "external worker required", "providers": provider_status()})
             if path == "/api/projects":
                 return self.send(200, engine.store.projects())
+            if path.startswith("/api/jobs/"):
+                try:
+                    return self.send(200, jobs.detail(path.split("/")[3]))
+                except KeyError:
+                    return self.send(404, {"error": "Job not found"})
             if path.startswith("/api/projects/"):
                 try:
+                    if path.endswith("/jobs"):
+                        return self.send(200, jobs.list(path.split("/")[3]))
                     return self.send(200, engine.detail(path.split("/")[3]))
                 except KeyError:
                     return self.send(404, {"error": "Project not found"})
@@ -70,9 +87,13 @@ def serve(root, port=8765):
                     result = engine.start_interview(body.get("name", ""))
                 elif parts == ["api", "demo"]:
                     result = engine.create()
+                elif len(parts) == 4 and parts[:2] == ["api", "jobs"]:
+                    result = jobs.control(parts[2], parts[3])
                 elif len(parts) == 4 and parts[:2] == ["api", "projects"]:
                     project_id, action = parts[2:]
-                    if action == "interview":
+                    if action == "jobs":
+                        result = jobs.enqueue(project_id, body.get("provider"), body.get("contract_hash"), body.get("request_key"), body.get("consent", False))
+                    elif action == "interview":
                         result = engine.interview(project_id, body.get("answers", {}))
                     elif action == "strategy":
                         result = engine.approve_strategy(project_id, body.get("strategy"), body.get("contract_hash"))
@@ -91,9 +112,27 @@ def serve(root, port=8765):
                 self.send(400, {"error": str(exc)})
 
     server = HTTPServer(("127.0.0.1", port), Handler)
-    print(f"LUCY control plane: http://127.0.0.1:{server.server_port}", flush=True)
+    previous_term = None
+    def stop_server(*_):
+        raise KeyboardInterrupt
+    if threading.current_thread() is threading.main_thread():
+        previous_term = signal.signal(signal.SIGTERM, stop_server)
     try:
+        if with_worker:
+            child = subprocess.Popen([sys.executable, "-m", "lucy", "--data", str(engine.store.root), "worker"], cwd=WEB.parent.parent)
+        print(f"LUCY control plane: http://127.0.0.1:{server.server_port}", flush=True)
         server.serve_forever()
+    except KeyboardInterrupt:
+        pass
     finally:
+        if child and child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
         server.server_close()
         engine.store.db.close()
+        if previous_term is not None:
+            signal.signal(signal.SIGTERM, previous_term)

@@ -1,5 +1,7 @@
 # Agent prompts, tools and permission model
 
+> Standalone update: background requirements reviews, direct provider adapter, durable jobs and progress polling are now implemented. See [standalone.md](standalone.md) for current behavior and limitations. The original design and initial-slice descriptions below remain historical where they describe these features as future work.
+
 The executable source of truth is `lucy/agents.py`. The control plane exposes all definitions and full prompts. There are seventeen roles from the original specification plus a Requirements Interviewer, which is useful before any application is supplied. Each project records its registry assignments. Specialists are definitions, not live model processes.
 
 ## Common prompt contract

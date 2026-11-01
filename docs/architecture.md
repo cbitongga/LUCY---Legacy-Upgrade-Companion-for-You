@@ -1,5 +1,7 @@
 # LUCY architecture and feasibility review
 
+> Standalone update: background requirements reviews, direct provider adapter, durable jobs and progress polling are now implemented. See [standalone.md](standalone.md) for current behavior and limitations. The original design and initial-slice descriptions below remain historical where they describe these features as future work.
+
 ## Current repository and scope
 
 The workspace was empty at intake. There was no code, deployment, dependency manifest, or migration platform to reuse. The user subsequently prioritized agent definitions and requirements interviewing, with a real application migration deferred until later. This implementation therefore leads with planning; the synthetic fixture exists only as optional developer validation.

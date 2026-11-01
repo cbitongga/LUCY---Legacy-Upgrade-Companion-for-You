@@ -1,5 +1,7 @@
 # Phased implementation and acceptance criteria
 
+> Standalone update: background requirements reviews, direct provider adapter, durable jobs and progress polling are now implemented. See [standalone.md](standalone.md) for current behavior and limitations. The original design and initial-slice descriptions below remain historical where they describe these features as future work.
+
 ## Current slice: agent definitions and requirements-first planning
 
 Implemented: local control plane, specialist registry, explicit interview, persistent contract versions, provisional strategy comparison, human planning approvals and evidence scaffolding. Optional synthetic developer fixture validates mismatch/resource detection and remediation plumbing. A real sample application is deferred at the user's direction.

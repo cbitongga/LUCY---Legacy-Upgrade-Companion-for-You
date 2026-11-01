@@ -10,7 +10,7 @@ Requires Python 3.11+; uses only the standard library.
 python3 -m lucy serve
 ```
 
-Open http://127.0.0.1:8765. Create a project, complete the requirements interview, inspect specialist definitions, and review a provisional strategy. State persists in `.lucy/lucy.sqlite3`. Stop with Ctrl-C; restart with the same data directory to continue.
+Open http://127.0.0.1:8765. Create a project, complete the requirements interview, inspect specialist definitions, and review a provisional strategy. **Agent operations** runs saved requirements reviews in a separate background worker; no VS Code, Copilot or Claude CLI session is needed. Offline reviews need no credentials or network. State persists in `.lucy/lucy.sqlite3`. Stop with Ctrl-C; restart with the same data directory to continue.
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -27,8 +27,10 @@ The inspection command reads filenames and metadata only, never executes reposit
 - Human planning approval bound to a contract hash; requirement edits revoke approval.
 - Local web control plane for projects, interviews, agents, strategies, gates, evidence, and knowledge.
 - Transactional project checkpoints, event history, hashed artifacts, fail-closed acceptance and explicitly unestimated forecasts.
+- Standalone background review queue, live progress polling, pause/cancel, bounded manual retries and lease recovery.
+- Offline deterministic review and an optional direct Claude API adapter with explicit transmission consent. Live API connectivity has not been verified.
 
-**Not implemented:** live model agents, general-purpose code migration, repository sandboxing, production access, organization authentication, distributed scheduling, real application profiling, soak/cloud/security testing, or cross-project knowledge retrieval. Registered agents are not running AI models. Planning approval never starts migration. Unknown answers can support planning but cannot establish executable acceptance criteria.
+**Not implemented:** general-purpose code migration, repository sandboxing, production access, organization authentication, distributed scheduling, real application profiling, soak/cloud/security testing, or cross-project knowledge retrieval. The only provider-backed task is read-only requirements review; other registered specialists are not live model agents. Planning approval never starts migration. Unknown answers can support planning but cannot establish executable acceptance criteria.
 
 ## Optional developer fixture
 
@@ -42,6 +44,8 @@ This explicitly approves a bounded fixture: baseline, seeded faulty refactor, co
 
 ## Documentation
 
+- [Standalone setup, provider boundaries and recovery](docs/standalone.md)
+- [Copy-paste handoff prompt for a controlled environment](docs/standalone-handoff-prompt.md)
 - [Architecture and critical review](docs/architecture.md)
 - [Agent and tool contracts](docs/agents-and-tools.md)
 - [Milestones and acceptance criteria](docs/roadmap.md)

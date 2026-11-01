@@ -1,5 +1,7 @@
 # Developer and local operations runbook
 
+> Standalone update: background requirements reviews, direct provider adapter, durable jobs and progress polling are now implemented. See [standalone.md](standalone.md) for current behavior and limitations. The original design and initial-slice descriptions below remain historical where they describe these features as future work.
+
 ## Launch and stop
 
 From the repository root run `python3 -m lucy serve`. The service binds only 127.0.0.1:8765. Use `--port` after `serve` to select another local port, and `--data /absolute/directory` before `serve` to select a state directory. Ctrl-C stops the process; restart with the same directory to resume saved interviews and checkpoints. There is no automatic startup service.
